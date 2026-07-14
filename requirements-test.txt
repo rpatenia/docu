@@ -1,0 +1,15 @@
+# Minimal dependency set for Section 9's test suite — traced directly
+# from conftest.py and test_*.py's import statements, NOT copied from
+# the full requirements.txt. Deliberately excludes bitsandbytes (needs
+# CUDA, unavailable on standard GitHub-hosted runners) and anything only
+# used by evaluation.py/app.py, which nothing in this test suite imports.
+# python-dotenv added after Section 14: every pipeline module now
+# imports config.py, which imports it — no longer an indirect dependency.
+pytest==8.2.2
+numpy==1.26.4
+faiss-cpu==1.8.0
+rank-bm25==0.2.2
+pypdf==4.3.1
+sentence-transformers==3.0.1
+transformers==4.44.2
+python-dotenv==1.0.1

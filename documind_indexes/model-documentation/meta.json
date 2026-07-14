@@ -1,0 +1,6 @@
+{
+  "embedding_model": "BAAI/bge-base-en-v1.5",
+  "dimension": 768,
+  "chunk_count": 15,
+  "created_at": "2026-07-12T14:44:53.143451+00:00"
+}

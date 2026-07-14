@@ -1,0 +1,6 @@
+[server]
+# Rejects an oversized upload before the script even reruns — the
+# first, coarse-grained layer of defense. Set explicitly rather than
+# relying on Streamlit's historical default, in case that default
+# shifts across versions.
+maxUploadSize = 50

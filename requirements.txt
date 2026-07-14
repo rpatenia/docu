@@ -1,0 +1,35 @@
+# --- PDF ingestion ---
+pypdf==4.3.1
+
+# --- Embeddings + cross-encoder reranking ---
+sentence-transformers==3.0.1
+
+# --- Sparse (BM25) + dense (FAISS) retrieval ---
+rank-bm25==0.2.2
+faiss-cpu==1.8.0
+
+# --- LLM inference ---
+torch==2.3.1
+transformers==4.44.2
+accelerate==0.33.0
+bitsandbytes==0.43.3
+
+# --- Orchestration ---
+langchain==0.2.14
+langchain-community==0.2.12
+
+# --- Evaluation ---
+ragas==0.1.16
+rouge-score==0.1.2
+bert-score==0.3.13
+datasets==2.20.0
+
+# --- Deployment ---
+streamlit==1.37.1
+
+# --- Testing ---
+pytest==8.2.2
+
+# --- Utilities ---
+python-dotenv==1.0.1
+numpy==1.26.4
