@@ -10,6 +10,13 @@ faiss-cpu==1.8.0
 
 # --- LLM inference ---
 torch==2.3.1
+# Pinned to match torch==2.3.1 exactly (PyTorch's official compat table).
+# Not used directly by this project, but sentence-transformers' CLIP
+# model-card code imports it unconditionally; Colab preinstalls a much
+# newer torchvision, and installing torch==2.3.1 without also pinning
+# torchvision leaves that newer/older pair mismatched, breaking on
+# `torch.library.register_fake` (added in torch 2.4) at import time.
+torchvision==0.18.1
 transformers==4.44.2
 accelerate==0.33.0
 bitsandbytes==0.43.3
