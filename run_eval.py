@@ -107,14 +107,19 @@ def main() -> None:
             EvalQuestion(question=q["question"], ground_truth=q["ground_truth"]) for q in questions
         ]
         report = evaluate_model(model_key, eval_questions, retriever, generator)
-        print(f"Faithfulness:       {report.ragas_scores.get('faithfulness', float('nan')):.3f}")
-        print(f"Answer relevancy:   {report.ragas_scores.get('answer_relevancy', float('nan')):.3f}")
-        print(f"Context precision:  {report.ragas_scores.get('context_precision', float('nan')):.3f}")
-        print(f"Context recall:     {report.ragas_scores.get('context_recall', float('nan')):.3f}")
-        print(f"ROUGE-L F1:         {report.rouge_l_f1:.3f}")
-        print(f"BERTScore F1:       {report.bertscore_f1:.3f}")
+
+        def _fmt(name: str, mean: float, ci: tuple[float, float]) -> str:
+            return f"{name:<19} {mean:.3f}  (95% CI: {ci[0]:.3f}-{ci[1]:.3f})"
+
+        print(_fmt("Faithfulness:", report.ragas_scores.get("faithfulness", float("nan")), report.ragas_score_cis.get("faithfulness", (float("nan"), float("nan")))))
+        print(_fmt("Answer relevancy:", report.ragas_scores.get("answer_relevancy", float("nan")), report.ragas_score_cis.get("answer_relevancy", (float("nan"), float("nan")))))
+        print(_fmt("Context precision:", report.ragas_scores.get("context_precision", float("nan")), report.ragas_score_cis.get("context_precision", (float("nan"), float("nan")))))
+        print(_fmt("Context recall:", report.ragas_scores.get("context_recall", float("nan")), report.ragas_score_cis.get("context_recall", (float("nan"), float("nan")))))
+        print(_fmt("ROUGE-L F1:", report.rouge_l_f1, report.rouge_l_f1_ci))
+        print(_fmt("BERTScore F1:", report.bertscore_f1, report.bertscore_f1_ci))
         print(f"Avg generation:     {report.avg_generation_seconds:.2f}s")
         print(f"Tokens/sec:         {report.avg_tokens_per_second:.1f}")
+        print(f"(n = {report.n_questions} question(s) — intervals are wide/unreliable below ~10)")
     else:
         print(
             "\n(Skipping quantitative RAGAS/ROUGE-L/BERTScore scoring -- not every "

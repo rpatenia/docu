@@ -12,6 +12,7 @@ question set.
 from __future__ import annotations
 
 import logging
+import random
 from dataclasses import dataclass, field
 
 from bert_score import score as bert_score
@@ -63,31 +64,68 @@ class EvaluationReport:
     avg_retrieval_seconds: float = 0.0  # Section 13
     avg_generation_seconds: float = 0.0  # Section 13
     avg_tokens_per_second: float = 0.0  # Section 13
+    n_questions: int = 0
+    ragas_score_cis: dict[str, tuple[float, float]] = field(default_factory=dict)
+    rouge_l_f1_ci: tuple[float, float] = (float("nan"), float("nan"))
+    bertscore_f1_ci: tuple[float, float] = (float("nan"), float("nan"))
 
 
-def _compute_rouge_l(records: list[EvalRecord]) -> float:
-    """Average ROUGE-L F1 across all records."""
+def _bootstrap_ci(
+    scores: list[float], n_resamples: int = 2000, confidence: float = 0.95, seed: int = 0
+) -> tuple[float, float]:
+    """95% bootstrap confidence interval for the mean of `scores`.
+
+    Resamples with replacement rather than assuming a normal
+    distribution — a manual eval run is typically a handful to a few
+    dozen questions, and a normal approximation is unreliable at that N.
+    With fewer than ~10 questions this interval will be wide (sometimes
+    uselessly so) — that width is real information about how little a
+    single small run tells you, not a bug in the calculation.
+    """
+    n = len(scores)
+    if n < 2:
+        mean = scores[0] if scores else float("nan")
+        return (mean, mean)
+
+    rng = random.Random(seed)
+    resample_means = []
+    for _ in range(n_resamples):
+        resample_means.append(sum(scores[rng.randrange(n)] for _ in range(n)) / n)
+    resample_means.sort()
+
+    alpha = 1 - confidence
+    lower_idx = int((alpha / 2) * n_resamples)
+    upper_idx = min(int((1 - alpha / 2) * n_resamples), n_resamples - 1)
+    return (resample_means[lower_idx], resample_means[upper_idx])
+
+
+def _rouge_l_scores(records: list[EvalRecord]) -> list[float]:
+    """Per-record ROUGE-L F1 scores (not yet averaged)."""
     scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
-    scores = [
-        scorer.score(r.ground_truth, r.answer)["rougeL"].fmeasure for r in records
-    ]
-    return sum(scores) / len(scores)
+    return [scorer.score(r.ground_truth, r.answer)["rougeL"].fmeasure for r in records]
 
 
-def _compute_bertscore(records: list[EvalRecord]) -> float:
-    """Average BERTScore F1 across all records."""
+def _bertscore_scores(records: list[EvalRecord]) -> list[float]:
+    """Per-record BERTScore F1 scores (not yet averaged)."""
     candidates = [r.answer for r in records]
     references = [r.ground_truth for r in records]
     _, _, f1 = bert_score(candidates, references, lang="en", verbose=False)
-    return float(f1.mean())
+    return [float(x) for x in f1]
 
 
-def _compute_ragas(records: list[EvalRecord], llm=None, embeddings=None) -> dict[str, float]:
+def _compute_ragas(
+    records: list[EvalRecord], llm=None, embeddings=None
+) -> tuple[dict[str, float], dict[str, list[float]]]:
     """Run RAGAS's RAG-specific metrics.
 
     `faithfulness` is the direct hallucination signal: it checks whether
     every claim in the answer is actually supported by the retrieved
     contexts, independent of Section 5's citation-marker validation.
+
+    Returns both the aggregate (mean) score per metric and the
+    per-question breakdown, so callers can bootstrap a confidence
+    interval around the aggregate instead of trusting a single number
+    computed from a handful of questions.
 
     NOTE (confidence flag): RAGAS's LLM-based metrics use OpenAI by
     default, which is wrong for an open-source-only stack. Pass `llm` /
@@ -95,8 +133,10 @@ def _compute_ragas(records: list[EvalRecord], llm=None, embeddings=None) -> dict
     override that. I'm moderately, not fully, confident in the exact
     wrapper import paths for ragas==0.1.16 specifically (this API has
     moved across ragas releases); verify against your installed
-    version's docs before relying on it. Everything else in this
-    function (the metric list, the dataset shape) I'm confident in.
+    version's docs before relying on it. Same caveat applies to
+    `result.to_pandas()` below for per-question scores. Everything else
+    in this function (the metric list, the dataset shape) I'm confident
+    in.
     """
     dataset = Dataset.from_dict(
         {
@@ -115,7 +155,15 @@ def _compute_ragas(records: list[EvalRecord], llm=None, embeddings=None) -> dict
         kwargs["embeddings"] = embeddings
 
     result = ragas_evaluate(dataset, metrics=metrics, **kwargs)
-    return {name: float(value) for name, value in dict(result).items()}
+    aggregate = {name: float(value) for name, value in dict(result).items()}
+
+    per_question_df = result.to_pandas()
+    per_question = {
+        name: [float(v) for v in per_question_df[name].tolist()]
+        for name in aggregate
+        if name in per_question_df.columns
+    }
+    return aggregate, per_question
 
 
 def evaluate_model(
@@ -182,10 +230,21 @@ def evaluate_model(
             f"cannot compute scores."
         )
 
+    if len(records) < 10:
+        logger.warning(
+            "Only %d question(s) evaluated — confidence intervals below will be "
+            "wide and not very trustworthy. Treat them as a rough sense of "
+            "uncertainty, not a rigorous statistical result; ~20-30+ questions "
+            "is a more reasonable minimum for that.",
+            len(records),
+        )
+
     logger.info("Scoring %d records for model '%s' ...", len(records), model_key)
-    ragas_scores = _compute_ragas(records, llm=llm, embeddings=embeddings)
-    rouge_l = _compute_rouge_l(records)
-    bertscore_f1 = _compute_bertscore(records)
+    ragas_scores, ragas_per_question = _compute_ragas(records, llm=llm, embeddings=embeddings)
+    rouge_l_scores = _rouge_l_scores(records)
+    bertscore_scores = _bertscore_scores(records)
+    rouge_l = sum(rouge_l_scores) / len(rouge_l_scores)
+    bertscore_f1 = sum(bertscore_scores) / len(bertscore_scores)
 
     report = EvaluationReport(
         model_key=model_key,
@@ -196,16 +255,23 @@ def evaluate_model(
         avg_retrieval_seconds=sum(retrieval_seconds) / len(retrieval_seconds),
         avg_generation_seconds=sum(generation_seconds) / len(generation_seconds),
         avg_tokens_per_second=sum(tokens_per_second_samples) / len(tokens_per_second_samples),
+        n_questions=len(records),
+        ragas_score_cis={
+            name: _bootstrap_ci(scores) for name, scores in ragas_per_question.items()
+        },
+        rouge_l_f1_ci=_bootstrap_ci(rouge_l_scores),
+        bertscore_f1_ci=_bootstrap_ci(bertscore_scores),
     )
     logger.info(
         "Model '%s': faithfulness=%.3f, rouge_l_f1=%.3f, bertscore_f1=%.3f, "
-        "avg_generation=%.2fs, tokens/sec=%.1f",
+        "avg_generation=%.2fs, tokens/sec=%.1f (n=%d questions)",
         model_key,
         ragas_scores.get("faithfulness", float("nan")),
         rouge_l,
         bertscore_f1,
         report.avg_generation_seconds,
         report.avg_tokens_per_second,
+        report.n_questions,
     )
     return report
 
