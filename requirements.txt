@@ -20,6 +20,16 @@ torchvision==0.18.1
 transformers==4.44.2
 accelerate==0.33.0
 bitsandbytes==0.43.3
+# Pinned to match torch==2.3.1's official paired Triton release. Not
+# imported directly by this project, but bitsandbytes==0.43.3
+# unconditionally imports its Triton-accelerated matmul module at
+# import time, which expects `triton.ops` — removed/restructured in
+# newer Triton releases. Colab preinstalls a much newer Triton than
+# bitsandbytes==0.43.3 was built against; without this pin the newer
+# one stays in place and breaks on `ModuleNotFoundError: No module
+# named 'triton.ops'` when loading any 4-bit quantized model. Same
+# mismatch shape as the torchvision pin above, different package.
+triton==2.3.0
 
 # --- Orchestration ---
 langchain==0.2.14
