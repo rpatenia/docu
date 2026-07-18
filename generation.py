@@ -98,8 +98,16 @@ def _extract_citations(
     """Parse [N] markers out of the answer and split them into valid
     citations (a real provided source) vs. invalid ones (the model
     invented a source number that was never given to it).
+
+    Matches both single markers like [1] and grouped ones like
+    [1, 4, 5] — models frequently cite multiple sources in one bracket,
+    and a regex that only matched a lone \\d+ per bracket silently
+    dropped every number in a grouped citation, misreporting a
+    genuinely grounded answer as having zero citations.
     """
-    found = {int(n) for n in re.findall(r"\[(\d+)\]", answer_text)}
+    found: set[int] = set()
+    for bracket_group in re.findall(r"\[([\d,\s]+)\]", answer_text):
+        found.update(int(n) for n in re.findall(r"\d+", bracket_group))
     valid = sorted(found & valid_numbers)
     invalid = sorted(found - valid_numbers)
     return valid, invalid

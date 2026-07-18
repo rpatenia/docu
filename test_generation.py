@@ -43,3 +43,19 @@ def test_extract_citations_deduplicates_repeated_markers():
         "[1] confirms this. Again, [1] is the source.", valid_numbers={1}
     )
     assert valid == [1]
+
+
+def test_extract_citations_handles_grouped_markers():
+    answer = "Variation and deviation differ in cause [1, 4, 5]."
+    valid, invalid = _extract_citations(answer, valid_numbers={1, 2, 3, 4, 5})
+
+    assert valid == [1, 4, 5]
+    assert invalid == []
+
+
+def test_extract_citations_grouped_markers_split_valid_and_invalid():
+    valid, invalid = _extract_citations(
+        "See [1, 9] for details.", valid_numbers={1, 2, 3}
+    )
+    assert valid == [1]
+    assert invalid == [9]
