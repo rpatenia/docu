@@ -12,6 +12,7 @@ question set.
 from __future__ import annotations
 
 import logging
+import math
 import random
 from dataclasses import dataclass, field
 
@@ -82,7 +83,16 @@ def _bootstrap_ci(
     With fewer than ~10 questions this interval will be wide (sometimes
     uselessly so) — that width is real information about how little a
     single small run tells you, not a bug in the calculation.
+
+    Drops NaN entries before resampling (RAGAS returns NaN for a
+    question it failed to parse a judgment for). Confirmed real: a
+    faithfulness score with a couple of unparseable questions still
+    computed a real aggregate (ragas averages with NaNs skipped), but
+    every bootstrap resample summed the raw list including those NaNs
+    -- one NaN makes an entire sum NaN, so the interval came out
+    nan-nan despite the mean itself being a real, meaningful number.
     """
+    scores = [s for s in scores if not math.isnan(s)]
     n = len(scores)
     if n < 2:
         mean = scores[0] if scores else float("nan")
