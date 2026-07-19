@@ -191,22 +191,45 @@ def main() -> None:
         _print_qualitative(q["question"], retriever, generator)
 
     if all(q["ground_truth"] for q in questions):
-        print("\n=== Quantitative evaluation (RAGAS + ROUGE-L + BERTScore) ===")
         eval_questions = [
             EvalQuestion(question=q["question"], ground_truth=q["ground_truth"]) for q in questions
         ]
-        ragas_llm, ragas_embeddings = _build_ragas_local_llm_and_embeddings(generator)
-        report = evaluate_model(
-            model_key, eval_questions, retriever, generator, llm=ragas_llm, embeddings=ragas_embeddings
-        )
 
+        # RAGAS scoring with a small (1.5B-3B-class) local model as its own
+        # judge is disabled by default: a real run confirmed all four RAGAS
+        # metrics come back nan even after fixing every plumbing issue
+        # (OpenAI default, concurrency/timeout mismatch, missing chat
+        # template) -- the judge model just can't reliably produce RAGAS's
+        # required structured JSON output. That's a documented capability
+        # limitation (README), not something worth re-paying an hour of
+        # wall-clock time per model to rediscover. Set RUN_RAGAS = True
+        # below to re-attempt it (e.g. against a larger/more capable judge).
         def _fmt(name: str, mean: float, ci: tuple[float, float]) -> str:
             return f"{name:<19} {mean:.3f}  (95% CI: {ci[0]:.3f}-{ci[1]:.3f})"
 
-        print(_fmt("Faithfulness:", report.ragas_scores.get("faithfulness", float("nan")), report.ragas_score_cis.get("faithfulness", (float("nan"), float("nan")))))
-        print(_fmt("Answer relevancy:", report.ragas_scores.get("answer_relevancy", float("nan")), report.ragas_score_cis.get("answer_relevancy", (float("nan"), float("nan")))))
-        print(_fmt("Context precision:", report.ragas_scores.get("context_precision", float("nan")), report.ragas_score_cis.get("context_precision", (float("nan"), float("nan")))))
-        print(_fmt("Context recall:", report.ragas_scores.get("context_recall", float("nan")), report.ragas_score_cis.get("context_recall", (float("nan"), float("nan")))))
+        RUN_RAGAS = False
+        if RUN_RAGAS:
+            print("\n=== Quantitative evaluation (RAGAS + ROUGE-L + BERTScore) ===")
+            ragas_llm, ragas_embeddings = _build_ragas_local_llm_and_embeddings(generator)
+            report = evaluate_model(
+                model_key, eval_questions, retriever, generator,
+                llm=ragas_llm, embeddings=ragas_embeddings, run_ragas=True,
+            )
+            print(_fmt("Faithfulness:", report.ragas_scores.get("faithfulness", float("nan")), report.ragas_score_cis.get("faithfulness", (float("nan"), float("nan")))))
+            print(_fmt("Answer relevancy:", report.ragas_scores.get("answer_relevancy", float("nan")), report.ragas_score_cis.get("answer_relevancy", (float("nan"), float("nan")))))
+            print(_fmt("Context precision:", report.ragas_scores.get("context_precision", float("nan")), report.ragas_score_cis.get("context_precision", (float("nan"), float("nan")))))
+            print(_fmt("Context recall:", report.ragas_scores.get("context_recall", float("nan")), report.ragas_score_cis.get("context_recall", (float("nan"), float("nan")))))
+        else:
+            print("\n=== Quantitative evaluation (ROUGE-L + BERTScore) ===")
+            print(
+                "(RAGAS skipped by default -- small local judge models couldn't "
+                "reliably produce its required structured output in testing. "
+                "See README's Limitations section and RUN_RAGAS in run_eval.py.)"
+            )
+            report = evaluate_model(
+                model_key, eval_questions, retriever, generator, run_ragas=False
+            )
+
         print(_fmt("ROUGE-L F1:", report.rouge_l_f1, report.rouge_l_f1_ci))
         print(_fmt("BERTScore F1:", report.bertscore_f1, report.bertscore_f1_ci))
         print(f"Avg generation:     {report.avg_generation_seconds:.2f}s")

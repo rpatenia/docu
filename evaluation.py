@@ -187,12 +187,25 @@ def evaluate_model(
     generator: Generator,
     llm=None,
     embeddings=None,
+    run_ragas: bool = True,
 ) -> EvaluationReport:
     """Run retrieval + generation for every question, then score the
     results with RAGAS, ROUGE-L, and BERTScore — and record latency and
     token throughput alongside quality (Section 13). Quality metrics
     alone don't answer "which model would you actually deploy" — speed
     matters just as much for that decision.
+
+    `run_ragas=False` skips RAGAS entirely and returns empty scores/CIs
+    for it. Real finding from a real run: with a small (1.5B) local
+    model as both the model under test and RAGAS's judge, all four
+    RAGAS metrics came back nan — the judge couldn't reliably produce
+    the structured JSON output RAGAS's prompts require, even after
+    fixing every plumbing issue (OpenAI default, concurrency/timeout
+    mismatch, missing chat template). That's a capability ceiling, not
+    a bug, and it costs roughly an hour of wall-clock time per model
+    to rediscover on a local GPU. Documented as a known limitation
+    (README) rather than chased further; ROUGE-L/BERTScore (which need
+    no LLM judge) remain the real quantitative signal.
     """
     if not questions:
         raise EvaluationError("Cannot evaluate against an empty question set.")
@@ -254,7 +267,11 @@ def evaluate_model(
         )
 
     logger.info("Scoring %d records for model '%s' ...", len(records), model_key)
-    ragas_scores, ragas_per_question = _compute_ragas(records, llm=llm, embeddings=embeddings)
+    if run_ragas:
+        ragas_scores, ragas_per_question = _compute_ragas(records, llm=llm, embeddings=embeddings)
+    else:
+        logger.info("run_ragas=False -- skipping RAGAS scoring, ROUGE-L/BERTScore only.")
+        ragas_scores, ragas_per_question = {}, {}
     rouge_l_scores = _rouge_l_scores(records)
     bertscore_scores = _bertscore_scores(records)
     rouge_l = sum(rouge_l_scores) / len(rouge_l_scores)
