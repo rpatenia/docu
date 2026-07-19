@@ -32,6 +32,9 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
+from langchain_core.language_models.llms import LLM
 
 from config import EMBEDDING_MODEL_NAME
 from evaluation import EvalQuestion, evaluate_model
@@ -39,6 +42,52 @@ from generation import Generator
 from indexing import Embedder, HybridIndex
 from pdf_ingestion import ingest_pdf
 from retrieval import HybridRetriever
+
+
+class _ChatTemplateLLM(LLM):
+    """LangChain LLM that manually applies the tokenizer's instruct
+    chat template before generating, instead of feeding RAGAS's
+    prompts to the model as raw text completions.
+
+    Not langchain_community's ChatHuggingFace: its _resolve_model_id()
+    unconditionally reads self.llm.endpoint_url, which a local
+    HuggingFacePipeline doesn't have -- it crashes on construction
+    (confirmed locally before writing this), because it only supports
+    remote inference endpoints, not local pipelines.
+
+    This exists because RAGAS's structured-JSON-output prompts came
+    back mostly unparseable ("Failed to parse output") when qwen2.5-1.5b
+    received them as raw completions rather than properly chat-
+    formatted input, in a real run where every RAGAS metric ended up
+    nan. Moderate, not full, confidence this actually fixes it -- a
+    1.5B model may still fail to reliably produce RAGAS's exact
+    expected schema even with correct chat formatting; noted directly
+    rather than assumed away. Subclasses langchain_core's LLM (not a
+    plain class) because ragas.llms.LangchainLLMWrapper calls
+    BaseLanguageModel methods (generate/agenerate) on whatever it
+    wraps -- a plain object with just a _call method would fail at
+    actual use time, not at construction, so this was verified
+    end-to-end locally (construct + wrap) before relying on it.
+    """
+
+    pipeline: Any
+    tokenizer: Any
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    @property
+    def _llm_type(self) -> str:
+        return "chat-template-wrapped-pipeline"
+
+    def _call(self, prompt: str, stop=None, **kwargs) -> str:
+        chat_prompt = self.tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        output = self.pipeline(chat_prompt)[0]["generated_text"]
+        return output[len(chat_prompt):] if output.startswith(chat_prompt) else output
 
 
 def _build_ragas_local_llm_and_embeddings(generator: Generator):
@@ -61,7 +110,6 @@ def _build_ragas_local_llm_and_embeddings(generator: Generator):
     the runtime behavior of the wrapped pipeline has not been.
     """
     from langchain_community.embeddings import HuggingFaceEmbeddings
-    from langchain_community.llms import HuggingFacePipeline
     from ragas.embeddings import LangchainEmbeddingsWrapper
     from ragas.llms import LangchainLLMWrapper
     from transformers import pipeline as hf_pipeline
@@ -71,8 +119,10 @@ def _build_ragas_local_llm_and_embeddings(generator: Generator):
         model=generator.model,
         tokenizer=generator.tokenizer,
         max_new_tokens=512,
+        return_full_text=True,
     )
-    ragas_llm = LangchainLLMWrapper(HuggingFacePipeline(pipeline=text_gen_pipeline))
+    chat_llm = _ChatTemplateLLM(pipeline=text_gen_pipeline, tokenizer=generator.tokenizer)
+    ragas_llm = LangchainLLMWrapper(chat_llm)
     ragas_embeddings = LangchainEmbeddingsWrapper(
         HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
     )
