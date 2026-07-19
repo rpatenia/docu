@@ -80,7 +80,7 @@ class _ChatTemplateLLM(LLM):
     def _llm_type(self) -> str:
         return "chat-template-wrapped-pipeline"
 
-    def _call(self, prompt: str, stop=None, **kwargs) -> str:
+    def _call(self, prompt: str, stop=None, run_manager=None, **kwargs) -> str:
         chat_prompt = self.tokenizer.apply_chat_template(
             [{"role": "user", "content": prompt}],
             tokenize=False,
