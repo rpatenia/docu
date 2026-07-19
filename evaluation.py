@@ -19,6 +19,7 @@ from bert_score import score as bert_score
 from datasets import Dataset
 from ragas import evaluate as ragas_evaluate
 from ragas.metrics import answer_relevancy, context_precision, context_recall, faithfulness
+from ragas.run_config import RunConfig
 from rouge_score import rouge_scorer
 
 from generation import Generator
@@ -137,6 +138,18 @@ def _compute_ragas(
     `result.to_pandas()` below for per-question scores. Everything else
     in this function (the metric list, the dataset shape) I'm confident
     in.
+
+    NOTE (local-LLM concurrency): RAGAS's default RunConfig assumes a
+    remote API that can genuinely serve many concurrent requests
+    (max_workers=16, timeout=180s) — a local HuggingFacePipeline can
+    only run one generation at a time on a single GPU, so the default
+    config queues dozens of jobs behind that one worker and times every
+    one of them out before its turn arrives (confirmed: all jobs failed
+    with TimeoutError against the default config in testing). Passing
+    max_workers=1 makes RAGAS's dispatch match what a local model can
+    actually do; the longer timeout gives each individual local
+    generation enough room to finish instead of racing a budget sized
+    for an API call.
     """
     dataset = Dataset.from_dict(
         {
@@ -154,7 +167,8 @@ def _compute_ragas(
     if embeddings is not None:
         kwargs["embeddings"] = embeddings
 
-    result = ragas_evaluate(dataset, metrics=metrics, **kwargs)
+    run_config = RunConfig(timeout=600, max_workers=1)
+    result = ragas_evaluate(dataset, metrics=metrics, run_config=run_config, **kwargs)
     aggregate = {name: float(value) for name, value in dict(result).items()}
 
     per_question_df = result.to_pandas()
