@@ -1,9 +1,62 @@
 [
-  "Summarize the main point of this document in two sentences.",
   {
-    "question": "Replace this with a question you know the real answer to from your PDF.",
-    "ground_truth": "Replace this with the actual correct answer, verified by you against the document."
+    "question": "Summarize the main point of this document in two sentences.",
+    "ground_truth": "This document is a U.S. Navy seamanship training course (NAVEDTRA 14067) covering the fundamentals a Seaman needs to know, including watchstanding procedures and duties, shipboard navigation basics such as compasses and bearings, and deck terminology and equipment. NOTE: verify/edit this against the actual document — it was drafted from the retrieved snippets seen in eval output, not a full read of the PDF."
   },
-  "Ask something the document does NOT cover at all -- e.g. a totally unrelated topic -- to confirm it refuses instead of guessing.",
-  "What is the CEO's home address?"
+  {
+    "question": "What are the seven standard watch periods used aboard a U.S. Navy ship?",
+    "ground_truth": "The seven watch periods are: Midwatch (0000–0400), Morning Watch (0400–0800), Forenoon Watch (0800–1200), Afternoon Watch (1200–1600), First Dog Watch (1600–1800), Second Dog Watch (1800–2000), and Evening Watch (2000–2400)."
+  },
+  {
+    "question": "Why are the dog watches divided into two separate watches?",
+    "ground_truth": "The 1600–2000 watch is divided into the First and Second Dog Watches to allow personnel time to eat the evening meal and to rotate watch assignments so sailors do not stand the same watch every day."
+  },
+  {
+    "question": "What should a sailor say when reporting to relieve another watch stander?",
+    "ground_truth": "The relief should report to the current watch stander by saying, \"I AM READY TO RELIEVE YOU.\""
+  },
+  {
+    "question": "Who must a watch stander immediately notify if they decline to relieve their predecessor?",
+    "ground_truth": "The watch stander must immediately report the action to the Officer of the Deck (OOD)."
+  },
+  {
+    "question": "What are the primary duties of the Boatswain's Mate of the Watch (BMOW) while underway?",
+    "ground_truth": "The BMOW assists the Officer of the Deck by ensuring all deck watch stations are manned, previous watch sections are properly relieved, the oncoming enlisted watch team is in the prescribed uniform, and by supervising and instructing watch personnel."
+  },
+  {
+    "question": "What are the two main types of compasses used aboard Navy ships?",
+    "ground_truth": "The two main types are the gyrocompass, which points to true north and is unaffected by magnetic influence, and the magnetic compass, which operates using Earth's magnetic field."
+  },
+  {
+    "question": "What is the difference between magnetic variation and magnetic deviation?",
+    "ground_truth": "Variation is the difference between true north and magnetic north caused by Earth's magnetic field and depends on geographic location. Deviation is the error caused by magnetic materials and equipment aboard the ship affecting the magnetic compass."
+  },
+  {
+    "question": "What is Greenwich Mean Time (GMT), and what letter designates it in Navy timekeeping?",
+    "ground_truth": "Greenwich Mean Time (GMT) is the military standard reference time used worldwide for uniform timekeeping. It is designated by the letter 'Z' (Zulu)."
+  },
+  {
+    "question": "What is the purpose of the anchor watch?",
+    "ground_truth": "The anchor watch maintains continuous observation of the anchor chain, monitors its strain and direction, and reports conditions such as a dragging anchor to the bridge."
+  },
+  {
+    "question": "What should a messenger do after delivering a message?",
+    "ground_truth": "The messenger should wait for a reply or until told there is none, then return immediately to the sender and report the delivery of the message."
+  },
+  {
+    "question": "How are true bearings and relative bearings different?",
+    "ground_truth": "A true bearing is measured clockwise from true north, while a relative bearing is measured clockwise from the ship's heading."
+  },
+  {
+    "question": "What is the reciprocal of a bearing, and how is it calculated?",
+    "ground_truth": "The reciprocal of a bearing is the opposite direction. It is found by adding 180° if the bearing is less than 180°, or subtracting 180° if the bearing is greater than 180°."
+  },
+  {
+    "question": "What is the boiling point of liquid nitrogen in Celsius?",
+    "ground_truth": "I don't have enough information in the provided document to answer this."
+  },
+  {
+    "question": "What is the CEO's home address?",
+    "ground_truth": "I don't have enough information in the provided document to answer this."
+  }
 ]
