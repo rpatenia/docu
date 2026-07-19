@@ -3,7 +3,7 @@
 Upload a PDF, ask questions about it in plain English, get cited answers
 grounded in the actual document — not a model's guess.
 
-![Tests](https://github.com/<your-username>/<your-repo>/actions/workflows/tests.yml/badge.svg)
+![Tests](https://github.com/rpatenia/docu/actions/workflows/tests.yml/badge.svg)
 
 ## What it does
 
@@ -144,25 +144,72 @@ flowchart TD
 
 ## Evaluation results
 
-*Not yet run against a real document/question set — Section 6 built the
-harness (RAGAS faithfulness/relevancy/context metrics, ROUGE-L,
-BERTScore), but no numbers are reported here until it's actually been
-run. Filling in fabricated scores would defeat the point of having a
-real evaluation framework.*
+Run with `run_eval.py` against a real 390-chunk document (a U.S. Navy
+seamanship training manual, NAVEDTRA 14067) and 15 questions with
+verified ground-truth answers — 12 answerable from the document, 3
+designed to test refusal (an off-topic question and an unrelated
+personal-info request, both of which correctly triggered "I don't have
+enough information..." rather than a fabricated answer). Mistral-7B's
+run is still pending.
 
-| Model | Faithfulness | ROUGE-L F1 | BERTScore F1 | Avg. Generation Time | Tokens/sec |
-|---|---|---|---|---|---|
-| Qwen2.5-1.5B | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| Llama-3.2-3B | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
-| Mistral-7B | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| Model | Faithfulness | Answer Relevancy | Context Precision | Context Recall | ROUGE-L F1 | BERTScore F1 | Avg. Generation Time | Tokens/sec |
+|---|---|---|---|---|---|---|---|---|
+| Qwen2.5-1.5B | 0.778 | 0.457 | 0.817 | 0.867 | 0.438 | 0.893 | 5.90s | 13.6 |
+| Llama-3.2-3B | 0.906 | 0.334 | 0.781 | 0.987 | 0.444 | 0.897 | 5.93s | 11.8 |
+| Mistral-7B | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+
+All scores are means over n=15 questions. At that sample size, 95%
+bootstrap confidence intervals are wide — treat the table above as
+directional, not precise:
+
+- **Qwen2.5-1.5B**: Faithfulness 0.556–0.956 · Answer Relevancy
+  0.251–0.663 · Context Precision 0.623–0.974 · Context Recall
+  0.667–1.000 · ROUGE-L 0.322–0.566 · BERTScore 0.870–0.918
+- **Llama-3.2-3B**: Answer Relevancy 0.123–0.563 · Context Precision
+  0.581–0.944 · Context Recall 0.960–1.000 · ROUGE-L 0.322–0.580 ·
+  BERTScore 0.874–0.922 (Faithfulness CI unavailable for this specific
+  run — a bootstrap bug let a `NaN`-valued judge response poison the
+  whole interval; fixed afterward, doesn't affect the point estimate)
+
+### RAGAS on a local, open-source judge
+
+RAGAS's LLM-judged metrics (Faithfulness, Answer Relevancy, Context
+Precision, Context Recall) default to grading answers with OpenAI's
+API. Getting them working against a fully open-source, local judge
+instead took several real fixes, in order:
+
+1. **Wrong provider** — wired a local model in as RAGAS's `llm`/
+   `embeddings` instead of letting it fall back to `ChatOpenAI` (which
+   fails outright with no `OPENAI_API_KEY`).
+2. **Concurrency mismatch** — RAGAS's default settings assume a remote
+   API that can serve ~16 requests at once. A local model on a single
+   GPU can only run one generation at a time, so the default queued
+   every job behind that one worker and timed all of them out. Fixed
+   by forcing `max_workers=1` and a longer per-job timeout.
+3. **Unparseable judge output** — RAGAS's prompts require an exact
+   JSON response shape. Feeding them to the model as raw text
+   completions (rather than its trained chat format) produced mostly
+   unparseable output, and every metric came back `NaN`. This was
+   first suspected to be a small-model capability ceiling — but the
+   real cause was simpler: applying the tokenizer's actual instruct
+   chat template before generating fixed it, and the numbers above are
+   the result.
+
+The real, remaining caveat: each model here acts as **its own judge**
+grading its own answers. That's a genuine methodological weakness (a
+model may be more forgiving of its own answers than an independent
+judge would be), not something these fixes solve — it's a deliberate
+tradeoff for staying fully open-source and running on one Colab GPU,
+not a hidden flaw.
 
 ## Limitations
 
 - **No OCR support** — scanned/image-only PDFs with no text layer aren't
   supported (Section 2).
-- **RAGAS's LLM-judged metrics** are only as reliable as the judge model
-  used; a small open-source judge is a noisier signal than a
-  frontier-model judge (Section 6).
+- **RAGAS's LLM-judged metrics use each model as its own judge** —
+  grading its own answers, not an independent frontier-model judge
+  (Section 6). See "RAGAS on a local, open-source judge" above for the
+  full story and why that's a deliberate tradeoff, not an oversight.
 - **Prompt-injection defenses are layered mitigation, not a guarantee** —
   documented false positives and false negatives exist by design
   (Section 11).
