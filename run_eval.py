@@ -33,11 +33,50 @@ import json
 import sys
 from pathlib import Path
 
+from config import EMBEDDING_MODEL_NAME
 from evaluation import EvalQuestion, evaluate_model
 from generation import Generator
 from indexing import Embedder, HybridIndex
 from pdf_ingestion import ingest_pdf
 from retrieval import HybridRetriever
+
+
+def _build_ragas_local_llm_and_embeddings(generator: Generator):
+    """Wrap the already-loaded generator model as RAGAS's judge LLM,
+    and load a LangChain embeddings model for its embedding-based
+    metrics -- without this, ragas.evaluate() falls back to its
+    default OpenAI judge and fails outright on a machine with no
+    OPENAI_API_KEY, which is wrong for this project's open-source-only
+    stack (see evaluation.py's _compute_ragas docstring).
+
+    Reuses generator.model/tokenizer instead of loading a separate
+    judge model -- cheaper on a single Colab T4's VRAM, at the cost of
+    a real methodological caveat: the model is partly judging its own
+    answers (faithfulness in particular), which is a softer signal
+    than an independent judge would give. Noted here rather than
+    hidden. Moderate, not full, confidence in this exact
+    HuggingFacePipeline/LangchainLLMWrapper wiring for the pinned
+    langchain-community==0.2.12 / ragas==0.1.16 combination -- import
+    paths were verified against those exact installed versions, but
+    the runtime behavior of the wrapped pipeline has not been.
+    """
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    from langchain_community.llms import HuggingFacePipeline
+    from ragas.embeddings import LangchainEmbeddingsWrapper
+    from ragas.llms import LangchainLLMWrapper
+    from transformers import pipeline as hf_pipeline
+
+    text_gen_pipeline = hf_pipeline(
+        "text-generation",
+        model=generator.model,
+        tokenizer=generator.tokenizer,
+        max_new_tokens=512,
+    )
+    ragas_llm = LangchainLLMWrapper(HuggingFacePipeline(pipeline=text_gen_pipeline))
+    ragas_embeddings = LangchainEmbeddingsWrapper(
+        HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
+    )
+    return ragas_llm, ragas_embeddings
 
 
 def _load_questions(path: Path) -> list[dict]:
@@ -106,7 +145,10 @@ def main() -> None:
         eval_questions = [
             EvalQuestion(question=q["question"], ground_truth=q["ground_truth"]) for q in questions
         ]
-        report = evaluate_model(model_key, eval_questions, retriever, generator)
+        ragas_llm, ragas_embeddings = _build_ragas_local_llm_and_embeddings(generator)
+        report = evaluate_model(
+            model_key, eval_questions, retriever, generator, llm=ragas_llm, embeddings=ragas_embeddings
+        )
 
         def _fmt(name: str, mean: float, ci: tuple[float, float]) -> str:
             return f"{name:<19} {mean:.3f}  (95% CI: {ci[0]:.3f}-{ci[1]:.3f})"
