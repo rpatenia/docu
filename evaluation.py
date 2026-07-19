@@ -196,16 +196,18 @@ def evaluate_model(
     matters just as much for that decision.
 
     `run_ragas=False` skips RAGAS entirely and returns empty scores/CIs
-    for it. Real finding from a real run: with a small (1.5B) local
-    model as both the model under test and RAGAS's judge, all four
-    RAGAS metrics came back nan — the judge couldn't reliably produce
-    the structured JSON output RAGAS's prompts require, even after
-    fixing every plumbing issue (OpenAI default, concurrency/timeout
-    mismatch, missing chat template). That's a capability ceiling, not
-    a bug, and it costs roughly an hour of wall-clock time per model
-    to rediscover on a local GPU. Documented as a known limitation
-    (README) rather than chased further; ROUGE-L/BERTScore (which need
-    no LLM judge) remain the real quantitative signal.
+    for it — an escape hatch if it ever proves unreliable again, not
+    the default. Earlier attempts with a small (1.5B) local model as
+    both the model under test and RAGAS's judge came back all-nan, and
+    were briefly suspected to be a capability ceiling the judge model
+    couldn't overcome. That suspicion turned out to be wrong: the
+    actual cause was RAGAS's prompts being fed to the model as raw
+    text completions instead of its proper instruct chat format. Once
+    `run_eval.py`'s `_ChatTemplateLLM` applied the real chat template,
+    a real run produced sensible scores (Faithfulness 0.778, Answer
+    relevancy 0.457, Context precision 0.817, Context recall 0.867) in
+    about 13 minutes — so a 1.5B local judge is workable here, given
+    correct prompt formatting.
     """
     if not questions:
         raise EvaluationError("Cannot evaluate against an empty question set.")

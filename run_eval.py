@@ -59,15 +59,17 @@ class _ChatTemplateLLM(LLM):
     back mostly unparseable ("Failed to parse output") when qwen2.5-1.5b
     received them as raw completions rather than properly chat-
     formatted input, in a real run where every RAGAS metric ended up
-    nan. Moderate, not full, confidence this actually fixes it -- a
-    1.5B model may still fail to reliably produce RAGAS's exact
-    expected schema even with correct chat formatting; noted directly
-    rather than assumed away. Subclasses langchain_core's LLM (not a
-    plain class) because ragas.llms.LangchainLLMWrapper calls
-    BaseLanguageModel methods (generate/agenerate) on whatever it
-    wraps -- a plain object with just a _call method would fail at
+    nan. Confirmed effective: after this fix (and separately fixing a
+    _call() signature bug that had been masking the result), a real
+    run produced real scores in ~13 minutes -- so a 1.5B local judge
+    is workable here once given correctly formatted prompts, not a
+    capability ceiling as first suspected. Subclasses langchain_core's
+    LLM (not a plain class) because ragas.llms.LangchainLLMWrapper
+    calls BaseLanguageModel methods (generate/agenerate) on whatever
+    it wraps -- a plain object with just a _call method would fail at
     actual use time, not at construction, so this was verified
-    end-to-end locally (construct + wrap) before relying on it.
+    end-to-end locally (construct + wrap + invoke/generate) before
+    relying on it.
     """
 
     pipeline: Any
@@ -195,19 +197,22 @@ def main() -> None:
             EvalQuestion(question=q["question"], ground_truth=q["ground_truth"]) for q in questions
         ]
 
-        # RAGAS scoring with a small (1.5B-3B-class) local model as its own
-        # judge is disabled by default: a real run confirmed all four RAGAS
-        # metrics come back nan even after fixing every plumbing issue
-        # (OpenAI default, concurrency/timeout mismatch, missing chat
-        # template) -- the judge model just can't reliably produce RAGAS's
-        # required structured JSON output. That's a documented capability
-        # limitation (README), not something worth re-paying an hour of
-        # wall-clock time per model to rediscover. Set RUN_RAGAS = True
-        # below to re-attempt it (e.g. against a larger/more capable judge).
+        # RAGAS scoring with the model-under-test also acting as its own
+        # judge (via _ChatTemplateLLM, applying the tokenizer's real chat
+        # format instead of feeding raw completions). An earlier attempt
+        # without the chat template came back all-nan on qwen2.5-1.5b
+        # (JSON parsing failures) and was briefly assumed to be a small-
+        # model capability ceiling -- but a real run after the chat-
+        # template fix landed produced real scores in ~13 minutes
+        # (Faithfulness 0.778, Answer relevancy 0.457, Context precision
+        # 0.817, Context recall 0.867), so that assumption was wrong: it
+        # was the missing chat formatting, not model size. Kept on by
+        # default; set RUN_RAGAS = False below to fall back to just
+        # ROUGE-L/BERTScore if it ever proves unreliable again.
         def _fmt(name: str, mean: float, ci: tuple[float, float]) -> str:
             return f"{name:<19} {mean:.3f}  (95% CI: {ci[0]:.3f}-{ci[1]:.3f})"
 
-        RUN_RAGAS = False
+        RUN_RAGAS = True
         if RUN_RAGAS:
             print("\n=== Quantitative evaluation (RAGAS + ROUGE-L + BERTScore) ===")
             ragas_llm, ragas_embeddings = _build_ragas_local_llm_and_embeddings(generator)
@@ -221,11 +226,7 @@ def main() -> None:
             print(_fmt("Context recall:", report.ragas_scores.get("context_recall", float("nan")), report.ragas_score_cis.get("context_recall", (float("nan"), float("nan")))))
         else:
             print("\n=== Quantitative evaluation (ROUGE-L + BERTScore) ===")
-            print(
-                "(RAGAS skipped by default -- small local judge models couldn't "
-                "reliably produce its required structured output in testing. "
-                "See README's Limitations section and RUN_RAGAS in run_eval.py.)"
-            )
+            print("(RAGAS disabled via RUN_RAGAS = False in run_eval.py.)")
             report = evaluate_model(
                 model_key, eval_questions, retriever, generator, run_ragas=False
             )
